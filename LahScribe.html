@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LahScribe beta2.1</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a;
+    color: #f0f0f0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 460px;
+    padding: 24px 20px 60px;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 2px;
+  }
+  .header .title {
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .header .version {
+    font-size: 12px;
+    color: #888;
+    margin-left: 6px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 20px;
+  }
+  .row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .box {
+    flex: 1;
+    background: #232323;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .box-label {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+  }
+  .box-value {
+    font-size: 20px;
+    font-weight: 500;
+  }
+  .box input[type="number"] {
+    width: 60px;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    color: #f0f0f0;
+    font-size: 18px;
+    text-align: center;
+    border-radius: 6px;
+    padding: 4px;
+  }
+  select {
+    background: #1a1a1a;
+    border: 1px solid #444;
+    color: #f0f0f0;
+    font-size: 16px;
+    text-align: center;
+    border-radius: 6px;
+    padding: 4px 8px;
+  }
+  .metronome-card {
+    background: #232323;
+    border-radius: 10px;
+    padding: 14px 10px 10px;
+    margin-bottom: 16px;
+  }
+  .beat-label {
+    text-align: center;
+    font-size: 11px;
+    color: #777;
+    margin-top: 4px;
+  }
+  .status {
+    text-align: center;
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 8px;
+    min-height: 18px;
+  }
+  .status.live { color: #4caf50; }
+  .status.error { color: #e57373; }
+  .status.countin { color: #ffb74d; }
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  button {
+    background: transparent;
+    border: 1px solid #555;
+    color: #f0f0f0;
+    font-size: 14px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:hover { background: #2c2c2c; }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .record-btn { border-color: #555; }
+  .record-dot { color: #e57373; margin-right: 6px; }
+  .phrase-card {
+    background: #232323;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .phrase-label {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 10px;
+  }
+  .phrase-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 20px;
+  }
+  .note-chip {
+    background: #2c2c2c;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .note-chip .dur {
+    color: #777;
+    font-size: 11px;
+    margin-left: 4px;
+  }
+  .playback-section {
+    border-top: 1px solid #333;
+    padding-top: 14px;
+  }
+  .playback-label {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 10px;
+  }
+  .playback-row {
+    display: flex;
+    gap: 8px;
+  }
+  .playback-row button {
+    flex: 1;
+    font-size: 13px;
+    padding: 9px;
+  }
+  .hint {
+    margin-top: 16px;
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .footer {
+    text-align: center;
+    font-size: 11px;
+    color: #555;
+    margin-top: 24px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <span class="title">LahScribe</span><span class="version">beta2.1</span>
+  </div>
+  <div class="subtitle">Milestone 2 - rhythm capture</div>
+
+  <div class="row">
+    <div class="box">
+      <div class="box-label">Tempo</div>
+      <input type="number" id="tempo-input" value="96" min="40" max="220" step="1"> <span style="font-size:12px;color:#888;">bpm</span>
+    </div>
+    <div class="box">
+      <div class="box-label">Time signature</div>
+      <select id="time-sig-select">
+        <option value="4/4" selected>4/4</option>
+        <option value="3/4">3/4</option>
+        <option value="6/8">6/8</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="metronome-card">
+    <svg viewBox="0 0 300 70" width="100%" style="max-width: 300px; display: block; margin: 0 auto;">
+      <path d="M 60 60 L 240 60" stroke="#3a3a3a" stroke-width="1"/>
+      <line id="pendulum" x1="150" y1="60" x2="150" y2="14" stroke="#42a5f5" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="150" cy="60" r="4" fill="#42a5f5"/>
+      <circle id="pendulum-tip" cx="150" cy="14" r="5" fill="#42a5f5"/>
+    </svg>
+    <div class="beat-label" id="beat-label">Beat - of -</div>
+  </div>
+
+  <div class="status" id="status">Ready to record</div>
+
+  <div class="controls">
+    <button id="record-btn" class="record-btn"><span class="record-dot">&#9679;</span>Count in + record</button>
+    <button id="stop-btn" disabled>Stop</button>
+  </div>
+
+  <div class="phrase-card">
+    <div class="phrase-label">Detected phrase</div>
+    <div class="phrase-items" id="phrase-items"></div>
+  </div>
+
+  <div class="playback-section">
+    <div class="playback-label">Playback</div>
+    <div class="playback-row">
+      <button id="play-original-btn" disabled>Your recording</button>
+      <button id="play-reconstructed-btn" disabled>Reconstructed</button>
+    </div>
+  </div>
+
+  <div class="hint">
+    Click plays during count-in only. Sing repeated same-pitch notes staccato so the app can tell them apart.
+  </div>
+
+  <div class="footer">&copy; 2026 Howie Yeo</div>
+
+</div>
+
+<script type="module">
+import { PitchDetector } from "https://esm.sh/pitchy@4";
+
+(async function() {
+  const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+  const statusEl = document.getElementById('status');
+  const recordBtn = document.getElementById('record-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const playOriginalBtn = document.getElementById('play-original-btn');
+  const playReconstructedBtn = document.getElementById('play-reconstructed-btn');
+  const phraseItemsEl = document.getElementById('phrase-items');
+  const tempoInput = document.getElementById('tempo-input');
+  const timeSigSelect = document.getElementById('time-sig-select');
+  const pendulumEl = document.getElementById('pendulum');
+  const pendulumTipEl = document.getElementById('pendulum-tip');
+  const beatLabelEl = document.getElementById('beat-label');
+
+  let audioContext = null;
+  let analyserNode = null;
+  let mediaStream = null;
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let originalAudioBlob = null;
+  let detector = null;
+  let inputBuffer = null;
+  let rafId = null;
+
+  let beatsPerBar = 4;
+  let beatUnit = 4;
+
+  let recordingStartTime = 0;
+  let beatDurationSec = 0.5;
+  let pendulumStartTime = 0;
+  let pendulumAnimId = null;
+
+  const CLARITY_THRESHOLD = 0.85;
+  const MIN_FREQ = 60;
+  const MAX_FREQ = 1000;
+  const AMPLITUDE_ONSET_DROP = 0.35;
+  const AMPLITUDE_HISTORY_FRAMES = 6;
+
+  let amplitudeHistory = [];
+  let currentNote = null;
+  let noteStartTime = 0;
+  let detectedNotes = [];
+  let isRecording = false;
+  let isCountingIn = false;
+
+  const RHYTHM_VALUES = [
+    { label: '1/16', beats: 0.25 },
+    { label: '1/8t', beats: 1 / 3 },
+    { label: '1/8', beats: 0.5 },
+    { label: '1/4', beats: 1.0 },
+    { label: '1/2', beats: 2.0 },
+    { label: 'whole', beats: 4.0 }
+  ];
+
+  function parseTimeSignature() {
+    const val = timeSigSelect.value;
+    const parts = val.split('/');
+    beatsPerBar = parseInt(parts[0], 10);
+    beatUnit = parseInt(parts[1], 10);
+  }
+
+  function freqToNote(freq) {
+    const A4 = 440;
+    const semitonesFromA4 = 12 * Math.log2(freq / A4);
+    const rounded = Math.round(semitonesFromA4);
+    const cents = Math.round((semitonesFromA4 - rounded) * 100);
+    const noteIndex = ((rounded % 12) + 9 + 12) % 12;
+    const octave = 4 + Math.floor((rounded + 9) / 12);
+    return { name: noteNames[noteIndex], octave: octave, cents: cents, freq: freq };
+  }
+
+  function noteToFreq(name, octave) {
+    const idx = noteNames.indexOf(name);
+    const semitonesFromA4 = (octave - 4) * 12 + (idx - 9);
+    return 440 * Math.pow(2, semitonesFromA4 / 12);
+  }
+
+  function snapDurationToRhythm(durationSec) {
+    const beatsElapsed = durationSec / beatDurationSec;
+    let best = RHYTHM_VALUES[0];
+    let bestDiff = Infinity;
+    for (const rv of RHYTHM_VALUES) {
+      const diff = Math.abs(rv.beats - beatsElapsed);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = rv;
+      }
+    }
+    return best;
+  }
+
+  function renderPhrase() {
+    phraseItemsEl.innerHTML = '';
+    detectedNotes.forEach(function(n) {
+      const chip = document.createElement('span');
+      chip.className = 'note-chip';
+      chip.textContent = n.name + n.octave;
+      const dur = document.createElement('span');
+      dur.className = 'dur';
+      dur.textContent = n.rhythmLabel;
+      chip.appendChild(dur);
+      phraseItemsEl.appendChild(chip);
+    });
+  }
+
+  function finalizeCurrentNote(endTime) {
+    if (currentNote === null) return;
+    const durationSec = endTime - noteStartTime;
+    if (durationSec < 0.08) {
+      currentNote = null;
+      return;
+    }
+    const rv = snapDurationToRhythm(durationSec);
+    detectedNotes.push({
+      name: currentNote.name,
+      octave: currentNote.octave,
+      freq: currentNote.freq,
+      startTime: noteStartTime,
+      durationSec: durationSec,
+      rhythmLabel: rv.label,
+      rhythmBeats: rv.beats
+    });
+    renderPhrase();
+    currentNote = null;
+  }
+
+  function analysisLoop() {
+    analyserNode.getFloatTimeDomainData(inputBuffer);
+
+    let sumSquares = 0;
+    for (let i = 0; i < inputBuffer.length; i++) {
+      sumSquares += inputBuffer[i] * inputBuffer[i];
+    }
+    const rms = Math.sqrt(sumSquares / inputBuffer.length);
+
+    amplitudeHistory.push(rms);
+    if (amplitudeHistory.length > AMPLITUDE_HISTORY_FRAMES) {
+      amplitudeHistory.shift();
+    }
+
+    const result = detector.findPitch(inputBuffer, audioContext.sampleRate);
+    const pitch = result[0];
+    const clarity = result[1];
+
+    const now = audioContext.currentTime - recordingStartTime;
+    const hasClearPitch = clarity >= CLARITY_THRESHOLD && pitch >= MIN_FREQ && pitch <= MAX_FREQ && rms > 0.01;
+
+    let onsetDetected = false;
+    if (amplitudeHistory.length >= AMPLITUDE_HISTORY_FRAMES) {
+      const recentMax = Math.max(...amplitudeHistory.slice(0, -1));
+      const latest = amplitudeHistory[amplitudeHistory.length - 1];
+      if (recentMax > 0.02 && latest < recentMax * (1 - AMPLITUDE_ONSET_DROP)) {
+        onsetDetected = true;
+      }
+    }
+
+    if (hasClearPitch) {
+      const note = freqToNote(pitch);
+      const label = note.name + note.octave;
+
+      if (currentNote === null) {
+        currentNote = note;
+        noteStartTime = now;
+      } else {
+        const currentLabel = currentNote.name + currentNote.octave;
+        if (label !== currentLabel) {
+          finalizeCurrentNote(now);
+          currentNote = note;
+          noteStartTime = now;
+        } else if (onsetDetected) {
+          finalizeCurrentNote(now);
+          currentNote = note;
+          noteStartTime = now;
+        }
+      }
+    } else {
+      if (currentNote !== null) {
+        finalizeCurrentNote(now);
+      }
+    }
+
+    rafId = requestAnimationFrame(analysisLoop);
+  }
+
+  function playClick(context, time, isAccent) {
+    const osc = context.createOscillator();
+    const gain = context.createGain();
+    osc.frequency.value = isAccent ? 1600 : 1000;
+    gain.gain.setValueAtTime(0.25, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+    osc.connect(gain);
+    gain.connect(context.destination);
+    osc.start(time);
+    osc.stop(time + 0.06);
+  }
+
+  function updatePendulumVisual() {
+    const elapsed = audioContext.currentTime - pendulumStartTime;
+    const beatPosition = elapsed / beatDurationSec;
+    const beatInBar = Math.floor(beatPosition) % beatsPerBar;
+    const fractionalBeat = beatPosition % 1;
+
+    const swingPhase = fractionalBeat < 0.5
+      ? fractionalBeat * 2
+      : 2 - fractionalBeat * 2;
+    const angleDeg = -40 + swingPhase * 80;
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const length = 46;
+    const x = 150 + length * Math.sin(angleRad);
+    const y = 60 - length * Math.cos(angleRad);
+    pendulumEl.setAttribute('x2', x.toFixed(1));
+    pendulumEl.setAttribute('y2', y.toFixed(1));
+    pendulumTipEl.setAttribute('cx', x.toFixed(1));
+    pendulumTipEl.setAttribute('cy', y.toFixed(1));
+
+    beatLabelEl.textContent = 'Beat ' + (beatInBar + 1) + ' of ' + beatsPerBar;
+
+    pendulumAnimId = requestAnimationFrame(updatePendulumVisual);
+  }
+
+  function stopPendulumVisual() {
+    if (pendulumAnimId) {
+      cancelAnimationFrame(pendulumAnimId);
+      pendulumAnimId = null;
+    }
+  }
+
+  async function startCountInAndRecord() {
+    try {
+      parseTimeSignature();
+      const bpm = parseInt(tempoInput.value, 10) || 96;
+      beatDurationSec = 60 / bpm;
+
+      statusEl.textContent = 'Requesting microphone access...';
+      statusEl.className = 'status';
+
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
+      });
+
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const sourceNode = audioContext.createMediaStreamSource(mediaStream);
+
+      analyserNode = audioContext.createAnalyser();
+      analyserNode.fftSize = 2048;
+      sourceNode.connect(analyserNode);
+
+      inputBuffer = new Float32Array(analyserNode.fftSize);
+      detector = PitchDetector.forFloat32Array(analyserNode.fftSize);
+
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(mediaStream);
+      mediaRecorder.ondataavailable = function(e) {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = function() {
+        originalAudioBlob = new Blob(recordedChunks, { type: recordedChunks[0] ? recordedChunks[0].type : 'audio/webm' });
+        playOriginalBtn.disabled = false;
+      };
+
+      recordBtn.disabled = true;
+      stopBtn.disabled = false;
+      detectedNotes = [];
+      renderPhrase();
+      playOriginalBtn.disabled = true;
+      playReconstructedBtn.disabled = true;
+
+      statusEl.textContent = 'Count-in...';
+      statusEl.className = 'status countin';
+      isCountingIn = true;
+
+      const countInStart = audioContext.currentTime + 0.1;
+      pendulumStartTime = countInStart;
+      updatePendulumVisual();
+
+      for (let b = 0; b < beatsPerBar; b++) {
+        playClick(audioContext, countInStart + b * beatDurationSec, b === 0);
+      }
+
+      const recordingStartAudioTime = countInStart + beatsPerBar * beatDurationSec;
+      const delayMs = (recordingStartAudioTime - audioContext.currentTime) * 1000;
+
+      setTimeout(function() {
+        isCountingIn = false;
+        isRecording = true;
+        recordingStartTime = audioContext.currentTime;
+        pendulumStartTime = audioContext.currentTime;
+        amplitudeHistory = [];
+        currentNote = null;
+
+        statusEl.textContent = 'Recording';
+        statusEl.className = 'status live';
+
+        mediaRecorder.start();
+        analysisLoop();
+      }, Math.max(0, delayMs));
+
+    } catch (err) {
+      statusEl.textContent = 'Microphone access failed: ' + err.message;
+      statusEl.className = 'status error';
+      recordBtn.disabled = false;
+      stopBtn.disabled = true;
+    }
+  }
+
+  function stopRecording() {
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    stopPendulumVisual();
+
+    if (currentNote !== null && isRecording) {
+      const now = audioContext.currentTime - recordingStartTime;
+      finalizeCurrentNote(now);
+    }
+
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(function(track) { track.stop(); });
+      mediaStream = null;
+    }
+
+    isRecording = false;
+    isCountingIn = false;
+
+    statusEl.textContent = 'Ready to record';
+    statusEl.className = 'status';
+    recordBtn.disabled = false;
+    stopBtn.disabled = true;
+    beatLabelEl.textContent = 'Beat - of -';
+
+    if (detectedNotes.length > 0) {
+      playReconstructedBtn.disabled = false;
+    }
+  }
+
+  async function playOriginal() {
+    if (!originalAudioBlob) return;
+    const url = URL.createObjectURL(originalAudioBlob);
+    const audioEl = new Audio(url);
+    audioEl.play();
+  }
+
+  function playReconstructed() {
+    if (detectedNotes.length === 0) return;
+    const playCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let t = playCtx.currentTime + 0.05;
+    detectedNotes.forEach(function(n) {
+      const osc = playCtx.createOscillator();
+      const gain = playCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = n.freq;
+      const dur = n.rhythmBeats * beatDurationSec;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
+      gain.gain.setValueAtTime(0.3, t + dur - 0.05 > t ? t + dur - 0.05 : t + dur * 0.7);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(gain);
+      gain.connect(playCtx.destination);
+      osc.start(t);
+      osc.stop(t + dur + 0.02);
+      t += dur;
+    });
+  }
+
+  recordBtn.addEventListener('click', startCountInAndRecord);
+  stopBtn.addEventListener('click', stopRecording);
+  playOriginalBtn.addEventListener('click', playOriginal);
+  playReconstructedBtn.addEventListener('click', playReconstructed);
+
+  parseTimeSignature();
+})();
+</script>
+</body>
+</html>
