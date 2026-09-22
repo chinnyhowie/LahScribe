@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hum2Note - Milestone 1: Pitch Detector</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a1a;
+    color: #f0f0f0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 460px;
+    padding: 24px 20px 60px;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 500;
+    text-align: center;
+    color: #ccc;
+    margin: 0 0 4px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 24px;
+  }
+  .status {
+    text-align: center;
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 8px;
+    min-height: 18px;
+  }
+  .status.live { color: #4caf50; }
+  .status.error { color: #e57373; }
+  .card {
+    background: #232323;
+    border-radius: 14px;
+    padding: 32px 20px;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .note {
+    font-size: 64px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -1px;
+  }
+  .freq {
+    font-size: 14px;
+    color: #999;
+    margin-top: 4px;
+  }
+  .needle-wrap {
+    margin: 28px 0 6px;
+  }
+  .cents {
+    font-size: 16px;
+    font-weight: 500;
+    color: #bbb;
+  }
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
+  button {
+    background: transparent;
+    border: 1px solid #555;
+    color: #f0f0f0;
+    font-size: 14px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:hover { background: #2c2c2c; }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .note-list {
+    margin-top: 28px;
+    border-top: 1px solid #333;
+    padding-top: 16px;
+  }
+  .note-list-title {
+    font-size: 12px;
+    color: #777;
+    margin-bottom: 8px;
+  }
+  .note-list-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 13px;
+    color: #aaa;
+    min-height: 20px;
+  }
+  .note-chip {
+    background: #2c2c2c;
+    border-radius: 6px;
+    padding: 3px 8px;
+  }
+  .hint {
+    margin-top: 20px;
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Hum2Note</h1>
+  <div class="subtitle">Milestone 1 - live pitch detection</div>
+
+  <div class="status" id="status">Microphone not started</div>
+
+  <div class="card">
+    <div class="note" id="note">--</div>
+    <div class="freq" id="freq">-- Hz</div>
+
+    <div class="needle-wrap">
+      <svg viewBox="0 0 300 90" width="100%" style="max-width: 320px;">
+        <line x1="20" y1="80" x2="280" y2="80" stroke="#555" stroke-width="1"/>
+        <line x1="150" y1="10" x2="150" y2="80" stroke="#3a3a3a" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="20" y1="80" x2="20" y2="70" stroke="#555" stroke-width="1"/>
+        <line x1="280" y1="80" x2="280" y2="70" stroke="#555" stroke-width="1"/>
+        <text x="20" y="90" text-anchor="middle" fill="#777" style="font-size: 10px;">-50c</text>
+        <text x="150" y="90" text-anchor="middle" fill="#777" style="font-size: 10px;">0</text>
+        <text x="280" y="90" text-anchor="middle" fill="#777" style="font-size: 10px;">+50c</text>
+        <line id="needle" x1="150" y1="80" x2="150" y2="15" stroke="#42a5f5" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="150" cy="80" r="4" fill="#42a5f5" id="needle-base"/>
+      </svg>
+    </div>
+    <div class="cents" id="cents">0 cents</div>
+  </div>
+
+  <div class="controls">
+    <button id="start-btn">Start listening</button>
+    <button id="stop-btn" disabled>Stop</button>
+  </div>
+
+  <div class="note-list">
+    <div class="note-list-title">Recent notes detected</div>
+    <div class="note-list-items" id="note-history"></div>
+  </div>
+
+  <div class="hint">
+    Hum a note or a short phrase into your microphone.<br>
+    This page only detects pitch - no rhythm or recording yet.
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pitchy/4.1.0/index.umd.min.js"></script>
+<script>
+(function() {
+  const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+  const statusEl = document.getElementById('status');
+  const noteEl = document.getElementById('note');
+  const freqEl = document.getElementById('freq');
+  const centsEl = document.getElementById('cents');
+  const needleEl = document.getElementById('needle');
+  const startBtn = document.getElementById('start-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const historyEl = document.getElementById('note-history');
+
+  let audioContext = null;
+  let analyserNode = null;
+  let mediaStream = null;
+  let detector = null;
+  let inputBuffer = null;
+  let rafId = null;
+
+  let lastLoggedNote = null;
+  let historyItems = [];
+  const MAX_HISTORY = 12;
+
+  const CLARITY_THRESHOLD = 0.9;
+  const MIN_FREQ = 60;
+  const MAX_FREQ = 1000;
+
+  function freqToNote(freq) {
+    const A4 = 440;
+    const semitonesFromA4 = 12 * Math.log2(freq / A4);
+    const rounded = Math.round(semitonesFromA4);
+    const cents = Math.round((semitonesFromA4 - rounded) * 100);
+    const noteIndex = ((rounded % 12) + 9 + 12) % 12;
+    const octave = 4 + Math.floor((rounded + 9) / 12);
+    return { name: noteNames[noteIndex], octave: octave, cents: cents };
+  }
+
+  function setNeedle(cents) {
+    const clamped = Math.max(-50, Math.min(50, cents));
+    const angleDeg = (clamped / 50) * 40;
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const length = 65;
+    const x = 150 + length * Math.sin(angleRad);
+    const y = 80 - length * Math.cos(angleRad);
+    needleEl.setAttribute('x2', x.toFixed(1));
+    needleEl.setAttribute('y2', y.toFixed(1));
+    const color = Math.abs(clamped) <= 10 ? '#66bb6a' : '#42a5f5';
+    needleEl.setAttribute('stroke', color);
+    document.getElementById('needle-base').setAttribute('fill', color);
+  }
+
+  function resetDisplay() {
+    noteEl.textContent = '--';
+    freqEl.textContent = '-- Hz';
+    centsEl.textContent = '0 cents';
+    setNeedle(0);
+  }
+
+  function pushHistory(label) {
+    if (label === lastLoggedNote) return;
+    lastLoggedNote = label;
+    historyItems.push(label);
+    if (historyItems.length > MAX_HISTORY) {
+      historyItems.shift();
+    }
+    historyEl.innerHTML = '';
+    historyItems.forEach(function(item) {
+      const chip = document.createElement('span');
+      chip.className = 'note-chip';
+      chip.textContent = item;
+      historyEl.appendChild(chip);
+    });
+  }
+
+  function updateLoop() {
+    analyserNode.getFloatTimeDomainData(inputBuffer);
+    const result = detector.findPitch(inputBuffer, audioContext.sampleRate);
+    const pitch = result[0];
+    const clarity = result[1];
+
+    if (clarity >= CLARITY_THRESHOLD && pitch >= MIN_FREQ && pitch <= MAX_FREQ) {
+      const note = freqToNote(pitch);
+      const label = note.name + note.octave;
+      noteEl.textContent = label;
+      freqEl.textContent = pitch.toFixed(1) + ' Hz';
+      const centsText = (note.cents > 0 ? '+' : '') + note.cents + ' cents';
+      centsEl.textContent = centsText;
+      setNeedle(note.cents);
+      pushHistory(label);
+    } else {
+      resetDisplay();
+      lastLoggedNote = null;
+    }
+
+    rafId = requestAnimationFrame(updateLoop);
+  }
+
+  async function startListening() {
+    try {
+      statusEl.textContent = 'Requesting microphone access...';
+      statusEl.className = 'status';
+
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
+      });
+
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const sourceNode = audioContext.createMediaStreamSource(mediaStream);
+
+      analyserNode = audioContext.createAnalyser();
+      analyserNode.fftSize = 2048;
+      sourceNode.connect(analyserNode);
+
+      inputBuffer = new Float32Array(analyserNode.fftSize);
+      detector = Pitchy.PitchDetector.forFloat32Array(analyserNode.fftSize);
+
+      statusEl.textContent = 'Listening';
+      statusEl.className = 'status live';
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+
+      updateLoop();
+
+    } catch (err) {
+      statusEl.textContent = 'Microphone access failed: ' + err.message;
+      statusEl.className = 'status error';
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    }
+  }
+
+  function stopListening() {
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(function(track) { track.stop(); });
+      mediaStream = null;
+    }
+    if (audioContext) {
+      audioContext.close();
+      audioContext = null;
+    }
+    resetDisplay();
+    lastLoggedNote = null;
+    statusEl.textContent = 'Microphone not started';
+    statusEl.className = 'status';
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+
+  startBtn.addEventListener('click', startListening);
+  stopBtn.addEventListener('click', stopListening);
+
+  resetDisplay();
+})();
+</script>
+</body>
+</html>
