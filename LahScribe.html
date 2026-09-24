@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LahScribe beta2.2</title>
+<title>LahScribe beta2.3</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -188,7 +188,7 @@
 <div class="wrap">
 
   <div class="header">
-    <span class="title">LahScribe</span><span class="version">beta2.2</span>
+    <span class="title">LahScribe</span><span class="version">beta2.3</span>
   </div>
   <div class="subtitle">Milestone 2 - rhythm capture</div>
 
@@ -229,6 +229,14 @@
     <div class="phrase-items" id="phrase-items"></div>
   </div>
 
+  <div class="phrase-card">
+    <div class="phrase-label">Raw diagnostic trace (unsnapped, unconfirmed)</div>
+    <div style="font-size: 11px; color: #777; margin-bottom: 8px;">
+      Every analysis frame during recording, before any note-confirmation or rhythm-snapping logic is applied.
+    </div>
+    <div id="trace-log" style="max-height: 260px; overflow-y: auto; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; line-height: 1.6; color: #999; background: #1a1a1a; border-radius: 8px; padding: 8px;"></div>
+  </div>
+
   <div class="playback-section">
     <div class="playback-label">Playback</div>
     <div class="playback-row">
@@ -257,6 +265,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   const playOriginalBtn = document.getElementById('play-original-btn');
   const playReconstructedBtn = document.getElementById('play-reconstructed-btn');
   const phraseItemsEl = document.getElementById('phrase-items');
+  const traceLogEl = document.getElementById('trace-log');
   const tempoInput = document.getElementById('tempo-input');
   const timeSigSelect = document.getElementById('time-sig-select');
   const pendulumEl = document.getElementById('pendulum');
@@ -399,6 +408,22 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
 
     const now = audioContext.currentTime - recordingStartTime;
     const hasClearPitch = clarity >= CLARITY_THRESHOLD && pitch >= MIN_FREQ && pitch <= MAX_FREQ && rms > 0.01;
+
+    // Raw diagnostic logging: every frame, unsnapped, unconfirmed, exactly
+    // as the pitch detector and amplitude calc produced it this frame.
+    if (isRecording) {
+      const rawNote = (pitch >= MIN_FREQ && pitch <= MAX_FREQ) ? freqToNote(pitch) : null;
+      const rawLabel = rawNote ? (rawNote.name + rawNote.octave) : '--';
+      const line = document.createElement('div');
+      line.textContent = now.toFixed(2) + 's  ' + rawLabel.padEnd(5, ' ')
+        + '  ' + pitch.toFixed(1).padStart(7, ' ') + 'Hz'
+        + '  clarity ' + clarity.toFixed(2)
+        + '  rms ' + rms.toFixed(3)
+        + (hasClearPitch ? '  [accepted]' : '  [rejected]');
+      line.style.color = hasClearPitch ? '#4caf50' : '#666';
+      traceLogEl.appendChild(line);
+      traceLogEl.scrollTop = traceLogEl.scrollHeight;
+    }
 
     // Only consider a staccato re-attack once the current note has been
     // sustained for a minimum stretch, so ordinary breath-driven volume
@@ -554,6 +579,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
       stopBtn.disabled = false;
       detectedNotes = [];
       renderPhrase();
+      traceLogEl.innerHTML = '';
       playOriginalBtn.disabled = true;
       playReconstructedBtn.disabled = true;
 
