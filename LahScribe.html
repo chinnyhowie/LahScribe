@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LahScribe beta2.1</title>
+<title>LahScribe beta2.2</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -188,7 +188,7 @@
 <div class="wrap">
 
   <div class="header">
-    <span class="title">LahScribe</span><span class="version">beta2.1</span>
+    <span class="title">LahScribe</span><span class="version">beta2.2</span>
   </div>
   <div class="subtitle">Milestone 2 - rhythm capture</div>
 
@@ -281,11 +281,13 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   let pendulumStartTime = 0;
   let pendulumAnimId = null;
 
-  const CLARITY_THRESHOLD = 0.85;
+  const CLARITY_THRESHOLD = 0.92;
   const MIN_FREQ = 60;
   const MAX_FREQ = 1000;
-  const AMPLITUDE_ONSET_DROP = 0.35;
-  const AMPLITUDE_HISTORY_FRAMES = 6;
+  const AMPLITUDE_ONSET_DROP = 0.6;
+  const AMPLITUDE_HISTORY_FRAMES = 8;
+  const PITCH_CHANGE_CONFIRM_FRAMES = 5;
+  const MIN_NOTE_DURATION_BEFORE_REATTACK = 0.15;
 
   let amplitudeHistory = [];
   let currentNote = null;
@@ -293,6 +295,8 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   let detectedNotes = [];
   let isRecording = false;
   let isCountingIn = false;
+  let candidateLabel = null;
+  let candidateFrameCount = 0;
 
   const RHYTHM_VALUES = [
     { label: '1/16', beats: 0.25 },
@@ -396,11 +400,17 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
     const now = audioContext.currentTime - recordingStartTime;
     const hasClearPitch = clarity >= CLARITY_THRESHOLD && pitch >= MIN_FREQ && pitch <= MAX_FREQ && rms > 0.01;
 
+    // Only consider a staccato re-attack once the current note has been
+    // sustained for a minimum stretch, so ordinary breath-driven volume
+    // dips early in a held note are never misread as a re-attack.
     let onsetDetected = false;
-    if (amplitudeHistory.length >= AMPLITUDE_HISTORY_FRAMES) {
-      const recentMax = Math.max(...amplitudeHistory.slice(0, -1));
-      const latest = amplitudeHistory[amplitudeHistory.length - 1];
-      if (recentMax > 0.02 && latest < recentMax * (1 - AMPLITUDE_ONSET_DROP)) {
+    const noteElapsed = now - noteStartTime;
+    if (currentNote !== null && noteElapsed >= MIN_NOTE_DURATION_BEFORE_REATTACK
+        && amplitudeHistory.length >= AMPLITUDE_HISTORY_FRAMES) {
+      const recentMax = Math.max(...amplitudeHistory.slice(0, -2));
+      const dipFrames = amplitudeHistory.slice(-2);
+      const dipped = dipFrames.every(function(v) { return v < recentMax * (1 - AMPLITUDE_ONSET_DROP); });
+      if (recentMax > 0.03 && dipped) {
         onsetDetected = true;
       }
     }
@@ -412,20 +422,47 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
       if (currentNote === null) {
         currentNote = note;
         noteStartTime = now;
+        candidateLabel = null;
+        candidateFrameCount = 0;
       } else {
         const currentLabel = currentNote.name + currentNote.octave;
-        if (label !== currentLabel) {
-          finalizeCurrentNote(now);
-          currentNote = note;
-          noteStartTime = now;
-        } else if (onsetDetected) {
-          finalizeCurrentNote(now);
-          currentNote = note;
-          noteStartTime = now;
+
+        if (label === currentLabel) {
+          // Pitch matches the held note; drop any pending change candidate.
+          candidateLabel = null;
+          candidateFrameCount = 0;
+          if (onsetDetected) {
+            finalizeCurrentNote(now);
+            currentNote = note;
+            noteStartTime = now;
+          }
+        } else {
+          // Pitch differs from the held note. Require this new pitch to
+          // persist for several consecutive frames before treating it as
+          // a genuine note change, so a single-frame wobble across a
+          // semitone boundary doesn't fragment the note.
+          if (label === candidateLabel) {
+            candidateFrameCount++;
+          } else {
+            candidateLabel = label;
+            candidateFrameCount = 1;
+          }
+          if (candidateFrameCount >= PITCH_CHANGE_CONFIRM_FRAMES) {
+            finalizeCurrentNote(now);
+            currentNote = note;
+            noteStartTime = now;
+            candidateLabel = null;
+            candidateFrameCount = 0;
+          }
         }
       }
     } else {
-      if (currentNote !== null) {
+      // No clear pitch this frame (silence, breath, noise). Don't let this
+      // alone break the held note or count toward a change candidate;
+      // only a sustained absence should end the note.
+      candidateLabel = null;
+      candidateFrameCount = 0;
+      if (currentNote !== null && noteElapsed > 0.25) {
         finalizeCurrentNote(now);
       }
     }
