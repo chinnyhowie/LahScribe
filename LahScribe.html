@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LahScribe beta2.4</title>
+<title>LahScribe beta2.5</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -188,7 +188,7 @@
 <div class="wrap">
 
   <div class="header">
-    <span class="title">LahScribe</span><span class="version">beta2.4</span>
+    <span class="title">LahScribe</span><span class="version">beta2.5</span>
   </div>
   <div class="subtitle">Milestone 2 - rhythm capture</div>
 
@@ -298,10 +298,14 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   const CLARITY_THRESHOLD = 0.92;
   const MIN_FREQ = 60;
   const MAX_FREQ = 1000;
-  const AMPLITUDE_ONSET_DROP = 0.6;
-  const AMPLITUDE_HISTORY_FRAMES = 8;
+  const AMPLITUDE_HISTORY_FRAMES = 10;
   const PITCH_CHANGE_CONFIRM_FRAMES = 5;
   const MIN_NOTE_DURATION_BEFORE_REATTACK = 0.15;
+  // A genuine re-attack (staccato) looks like a sharp drop followed by a
+  // clear recovery upward - not a monotonic decay to silence, which is
+  // the normal shape of a sustained note's natural amplitude envelope.
+  const REATTACK_DIP_RATIO = 0.45;
+  const REATTACK_RECOVERY_RATIO = 1.6;
 
   let amplitudeHistory = [];
   let currentNote = null;
@@ -311,6 +315,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   let isCountingIn = false;
   let candidateLabel = null;
   let candidateFrameCount = 0;
+  let candidatePitches = [];
 
   const RHYTHM_VALUES = [
     { label: '1/16', beats: 0.25 },
@@ -434,15 +439,23 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
 
     // Only consider a staccato re-attack once the current note has been
     // sustained for a minimum stretch, so ordinary breath-driven volume
-    // dips early in a held note are never misread as a re-attack.
+    // dips early in a held note are never misread as a re-attack. A real
+    // re-attack has a specific shape: amplitude dips sharply, THEN
+    // recovers upward again. A monotonic decay toward silence (the
+    // normal shape of a sustained note ending naturally) never recovers,
+    // so it's rejected here even if the dip itself is steep.
     let onsetDetected = false;
     const noteElapsed = now - noteStartTime;
     if (currentNote !== null && noteElapsed >= MIN_NOTE_DURATION_BEFORE_REATTACK
         && amplitudeHistory.length >= AMPLITUDE_HISTORY_FRAMES) {
-      const recentMax = Math.max(...amplitudeHistory.slice(0, -2));
-      const dipFrames = amplitudeHistory.slice(-2);
-      const dipped = dipFrames.every(function(v) { return v < recentMax * (1 - AMPLITUDE_ONSET_DROP); });
-      if (recentMax > 0.03 && dipped) {
+      const hist = amplitudeHistory;
+      const n = hist.length;
+      const preDipMax = Math.max(...hist.slice(0, n - 4));
+      const dipMin = Math.min(...hist.slice(n - 4, n - 1));
+      const recovered = hist[n - 1];
+      const realDip = preDipMax > 0.03 && dipMin < preDipMax * REATTACK_DIP_RATIO;
+      const realRecovery = recovered > dipMin * REATTACK_RECOVERY_RATIO;
+      if (realDip && realRecovery) {
         onsetDetected = true;
       }
     }
@@ -456,6 +469,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
         noteStartTime = now;
         candidateLabel = null;
         candidateFrameCount = 0;
+        candidatePitches = [];
       } else {
         const currentLabel = currentNote.name + currentNote.octave;
 
@@ -463,6 +477,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
           // Pitch matches the held note; drop any pending change candidate.
           candidateLabel = null;
           candidateFrameCount = 0;
+          candidatePitches = [];
           if (onsetDetected) {
             finalizeCurrentNote(now);
             currentNote = note;
@@ -472,19 +487,31 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
           // Pitch differs from the held note. Require this new pitch to
           // persist for several consecutive frames before treating it as
           // a genuine note change, so a single-frame wobble across a
-          // semitone boundary doesn't fragment the note.
+          // semitone boundary doesn't fragment the note. While waiting
+          // for confirmation, collect the actual frequency readings too,
+          // since the note-name label can itself flicker across nearby
+          // semitones during the scoop into a new pitch; once confirmed,
+          // the note's identity is taken from the settled end of this
+          // window, not from whichever frame happened to trigger it.
           if (label === candidateLabel) {
             candidateFrameCount++;
+            candidatePitches.push(note.freq);
           } else {
             candidateLabel = label;
             candidateFrameCount = 1;
+            candidatePitches = [note.freq];
           }
           if (candidateFrameCount >= PITCH_CHANGE_CONFIRM_FRAMES) {
             finalizeCurrentNote(now);
-            currentNote = note;
+            // Re-derive the settled note from the most recent candidate
+            // frames (the tail of the confirmation window), which sit
+            // past the initial scoop rather than at its start.
+            const settledFreq = candidatePitches[candidatePitches.length - 1];
+            currentNote = freqToNote(settledFreq);
             noteStartTime = now;
             candidateLabel = null;
             candidateFrameCount = 0;
+            candidatePitches = [];
           }
         }
       }
@@ -494,6 +521,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
       // only a sustained absence should end the note.
       candidateLabel = null;
       candidateFrameCount = 0;
+      candidatePitches = [];
       if (currentNote !== null && noteElapsed > 0.25) {
         finalizeCurrentNote(now);
       }
@@ -613,6 +641,9 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
         pendulumStartTime = audioContext.currentTime;
         amplitudeHistory = [];
         currentNote = null;
+        candidateLabel = null;
+        candidateFrameCount = 0;
+        candidatePitches = [];
 
         statusEl.textContent = 'Recording';
         statusEl.className = 'status live';
