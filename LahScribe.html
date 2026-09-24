@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LahScribe beta2.5</title>
+<title>LahScribe beta2.6</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -188,7 +188,7 @@
 <div class="wrap">
 
   <div class="header">
-    <span class="title">LahScribe</span><span class="version">beta2.5</span>
+    <span class="title">LahScribe</span><span class="version">beta2.6</span>
   </div>
   <div class="subtitle">Milestone 2 - rhythm capture</div>
 
@@ -301,6 +301,12 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   const AMPLITUDE_HISTORY_FRAMES = 10;
   const PITCH_CHANGE_CONFIRM_FRAMES = 5;
   const MIN_NOTE_DURATION_BEFORE_REATTACK = 0.15;
+  // A note's very first moments (the attack) naturally wobble in pitch as
+  // the voice settles - normal for any human voice, not noise. While a
+  // note is younger than this, treat pitch drift as still-settling into
+  // the SAME note (update its identity) rather than starting the
+  // countdown toward a brand new note.
+  const MIN_NOTE_AGE_BEFORE_CHANGE = 0.12;
   // A genuine re-attack (staccato) looks like a sharp drop followed by a
   // clear recovery upward - not a monotonic decay to silence, which is
   // the normal shape of a sustained note's natural amplitude envelope.
@@ -483,6 +489,17 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
             currentNote = note;
             noteStartTime = now;
           }
+        } else if (noteElapsed < MIN_NOTE_AGE_BEFORE_CHANGE) {
+          // The current note is still very young (within its natural
+          // attack/settling window). Don't start counting this as a
+          // candidate for a NEW note - instead, treat it as the same
+          // note still settling, and just update its identity to the
+          // latest reading. This is what stops one sung note's opening
+          // wobble from being counted as two separate notes.
+          currentNote = note;
+          candidateLabel = null;
+          candidateFrameCount = 0;
+          candidatePitches = [];
         } else {
           // Pitch differs from the held note. Require this new pitch to
           // persist for several consecutive frames before treating it as
