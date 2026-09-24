@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LahScribe beta2.6</title>
+<title>LahScribe beta2.7</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -188,7 +188,7 @@
 <div class="wrap">
 
   <div class="header">
-    <span class="title">LahScribe</span><span class="version">beta2.6</span>
+    <span class="title">LahScribe</span><span class="version">beta2.7</span>
   </div>
   <div class="subtitle">Milestone 2 - rhythm capture</div>
 
@@ -310,8 +310,15 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   // A genuine re-attack (staccato) looks like a sharp drop followed by a
   // clear recovery upward - not a monotonic decay to silence, which is
   // the normal shape of a sustained note's natural amplitude envelope.
+  // Natural vibrato also causes amplitude to dip and recover repeatedly
+  // WITHIN one note, but those dips stay well above true silence - only
+  // an actual pause between articulations drops close to the noise
+  // floor. So a real re-attack must ALSO dip below this absolute level,
+  // not just a percentage of its own recent peak, to be distinguished
+  // from vibrato's more modest, higher-floor fluctuation.
   const REATTACK_DIP_RATIO = 0.45;
   const REATTACK_RECOVERY_RATIO = 1.6;
+  const REATTACK_ABSOLUTE_FLOOR = 0.035;
 
   let amplitudeHistory = [];
   let currentNote = null;
@@ -459,7 +466,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
       const preDipMax = Math.max(...hist.slice(0, n - 4));
       const dipMin = Math.min(...hist.slice(n - 4, n - 1));
       const recovered = hist[n - 1];
-      const realDip = preDipMax > 0.03 && dipMin < preDipMax * REATTACK_DIP_RATIO;
+      const realDip = preDipMax > 0.03 && dipMin < preDipMax * REATTACK_DIP_RATIO && dipMin < REATTACK_ABSOLUTE_FLOOR;
       const realRecovery = recovered > dipMin * REATTACK_RECOVERY_RATIO;
       if (realDip && realRecovery) {
         onsetDetected = true;
