@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LahScribe beta2.3</title>
+<title>LahScribe beta2.4</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -188,7 +188,7 @@
 <div class="wrap">
 
   <div class="header">
-    <span class="title">LahScribe</span><span class="version">beta2.3</span>
+    <span class="title">LahScribe</span><span class="version">beta2.4</span>
   </div>
   <div class="subtitle">Milestone 2 - rhythm capture</div>
 
@@ -234,6 +234,9 @@
     <div style="font-size: 11px; color: #777; margin-bottom: 8px;">
       Every analysis frame during recording, before any note-confirmation or rhythm-snapping logic is applied.
     </div>
+    <div style="display: flex; justify-content: flex-end; margin-bottom: 6px;">
+      <button id="copy-trace-btn" style="font-size: 12px; padding: 6px 12px;">Copy trace</button>
+    </div>
     <div id="trace-log" style="max-height: 260px; overflow-y: auto; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; line-height: 1.6; color: #999; background: #1a1a1a; border-radius: 8px; padding: 8px;"></div>
   </div>
 
@@ -266,6 +269,8 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   const playReconstructedBtn = document.getElementById('play-reconstructed-btn');
   const phraseItemsEl = document.getElementById('phrase-items');
   const traceLogEl = document.getElementById('trace-log');
+  const copyTraceBtn = document.getElementById('copy-trace-btn');
+  let traceLines = [];
   const tempoInput = document.getElementById('tempo-input');
   const timeSigSelect = document.getElementById('time-sig-select');
   const pendulumEl = document.getElementById('pendulum');
@@ -414,12 +419,14 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
     if (isRecording) {
       const rawNote = (pitch >= MIN_FREQ && pitch <= MAX_FREQ) ? freqToNote(pitch) : null;
       const rawLabel = rawNote ? (rawNote.name + rawNote.octave) : '--';
-      const line = document.createElement('div');
-      line.textContent = now.toFixed(2) + 's  ' + rawLabel.padEnd(5, ' ')
+      const lineText = now.toFixed(2) + 's  ' + rawLabel.padEnd(5, ' ')
         + '  ' + pitch.toFixed(1).padStart(7, ' ') + 'Hz'
         + '  clarity ' + clarity.toFixed(2)
         + '  rms ' + rms.toFixed(3)
         + (hasClearPitch ? '  [accepted]' : '  [rejected]');
+      traceLines.push(lineText);
+      const line = document.createElement('div');
+      line.textContent = lineText;
       line.style.color = hasClearPitch ? '#4caf50' : '#666';
       traceLogEl.appendChild(line);
       traceLogEl.scrollTop = traceLogEl.scrollHeight;
@@ -580,6 +587,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
       detectedNotes = [];
       renderPhrase();
       traceLogEl.innerHTML = '';
+      traceLines = [];
       playOriginalBtn.disabled = true;
       playReconstructedBtn.disabled = true;
 
@@ -688,6 +696,35 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   stopBtn.addEventListener('click', stopRecording);
   playOriginalBtn.addEventListener('click', playOriginal);
   playReconstructedBtn.addEventListener('click', playReconstructed);
+  copyTraceBtn.addEventListener('click', async function() {
+    const text = traceLines.join('\n');
+    if (!text) {
+      copyTraceBtn.textContent = 'Nothing to copy';
+      setTimeout(function() { copyTraceBtn.textContent = 'Copy trace'; }, 1500);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      copyTraceBtn.textContent = 'Copied!';
+    } catch (err) {
+      // Fallback for browsers/contexts that block the async clipboard API
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        copyTraceBtn.textContent = 'Copied!';
+      } catch (err2) {
+        copyTraceBtn.textContent = 'Copy failed';
+      }
+      document.body.removeChild(textarea);
+    }
+    setTimeout(function() { copyTraceBtn.textContent = 'Copy trace'; }, 1500);
+  });
 
   parseTimeSignature();
 })();
