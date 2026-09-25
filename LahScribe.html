@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LahScribe beta2.7</title>
+<title>LahScribe beta2.8</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -188,7 +188,7 @@
 <div class="wrap">
 
   <div class="header">
-    <span class="title">LahScribe</span><span class="version">beta2.7</span>
+    <span class="title">LahScribe</span><span class="version">beta2.8</span>
   </div>
   <div class="subtitle">Milestone 2 - rhythm capture</div>
 
@@ -311,14 +311,18 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   // clear recovery upward - not a monotonic decay to silence, which is
   // the normal shape of a sustained note's natural amplitude envelope.
   // Natural vibrato also causes amplitude to dip and recover repeatedly
-  // WITHIN one note, but those dips stay well above true silence - only
-  // an actual pause between articulations drops close to the noise
-  // floor. So a real re-attack must ALSO dip below this absolute level,
-  // not just a percentage of its own recent peak, to be distinguished
-  // from vibrato's more modest, higher-floor fluctuation.
-  const REATTACK_DIP_RATIO = 0.45;
-  const REATTACK_RECOVERY_RATIO = 1.6;
+  // WITHIN one note - and critically, those dips are brief, just one or
+  // two frames before bouncing back. A genuine pause between two sung
+  // notes lasts noticeably longer. So instead of only checking how LOW
+  // the dip goes, this also requires the low reading to PERSIST for a
+  // minimum stretch before counting as a real gap - a duration check,
+  // not just a threshold check, which is a fundamentally different (and
+  // more reliable) signal than dip depth alone.
   const REATTACK_ABSOLUTE_FLOOR = 0.035;
+  const REATTACK_MIN_DIP_FRAMES = 3;
+  const REATTACK_RECOVERY_RATIO = 1.6;
+
+  let lowAmplitudeStreak = 0;
 
   let amplitudeHistory = [];
   let currentNote = null;
@@ -425,6 +429,17 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
       amplitudeHistory.shift();
     }
 
+    // Track how many CONSECUTIVE frames in a row have been near-silent.
+    // Vibrato dips are brief (one frame, maybe two) before bouncing back;
+    // a genuine pause between two sung notes persists for several frames
+    // running. Requiring a streak, not just a single low reading, is what
+    // tells the two apart.
+    if (rms < REATTACK_ABSOLUTE_FLOOR) {
+      lowAmplitudeStreak++;
+    } else {
+      lowAmplitudeStreak = 0;
+    }
+
     const result = detector.findPitch(inputBuffer, audioContext.sampleRate);
     const pitch = result[0];
     const clarity = result[1];
@@ -453,24 +468,17 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
     // Only consider a staccato re-attack once the current note has been
     // sustained for a minimum stretch, so ordinary breath-driven volume
     // dips early in a held note are never misread as a re-attack. A real
-    // re-attack has a specific shape: amplitude dips sharply, THEN
-    // recovers upward again. A monotonic decay toward silence (the
-    // normal shape of a sustained note ending naturally) never recovers,
-    // so it's rejected here even if the dip itself is steep.
+    // re-attack requires a SUSTAINED near-silent streak (several frames
+    // running, not a single flickering dip) followed by a clear recovery
+    // upward. Vibrato produces quick, single-frame dips that bounce back
+    // immediately - too brief to build the streak this checks for.
     let onsetDetected = false;
     const noteElapsed = now - noteStartTime;
     if (currentNote !== null && noteElapsed >= MIN_NOTE_DURATION_BEFORE_REATTACK
-        && amplitudeHistory.length >= AMPLITUDE_HISTORY_FRAMES) {
-      const hist = amplitudeHistory;
-      const n = hist.length;
-      const preDipMax = Math.max(...hist.slice(0, n - 4));
-      const dipMin = Math.min(...hist.slice(n - 4, n - 1));
-      const recovered = hist[n - 1];
-      const realDip = preDipMax > 0.03 && dipMin < preDipMax * REATTACK_DIP_RATIO && dipMin < REATTACK_ABSOLUTE_FLOOR;
-      const realRecovery = recovered > dipMin * REATTACK_RECOVERY_RATIO;
-      if (realDip && realRecovery) {
-        onsetDetected = true;
-      }
+        && lowAmplitudeStreak >= REATTACK_MIN_DIP_FRAMES
+        && rms > REATTACK_ABSOLUTE_FLOOR * REATTACK_RECOVERY_RATIO) {
+      onsetDetected = true;
+      lowAmplitudeStreak = 0;
     }
 
     if (hasClearPitch) {
@@ -664,6 +672,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
         recordingStartTime = audioContext.currentTime;
         pendulumStartTime = audioContext.currentTime;
         amplitudeHistory = [];
+        lowAmplitudeStreak = 0;
         currentNote = null;
         candidateLabel = null;
         candidateFrameCount = 0;
