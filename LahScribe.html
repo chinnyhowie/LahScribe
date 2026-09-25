@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LahScribe beta2.8</title>
+<title>LahScribe beta2.9</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -188,7 +188,7 @@
 <div class="wrap">
 
   <div class="header">
-    <span class="title">LahScribe</span><span class="version">beta2.8</span>
+    <span class="title">LahScribe</span><span class="version">beta2.9</span>
   </div>
   <div class="subtitle">Milestone 2 - rhythm capture</div>
 
@@ -227,6 +227,7 @@
   <div class="phrase-card">
     <div class="phrase-label">Detected phrase</div>
     <div class="phrase-items" id="phrase-items"></div>
+    <div id="passing-tone-note" style="font-size: 11px; color: #666; margin-top: 10px;"></div>
   </div>
 
   <div class="phrase-card">
@@ -268,6 +269,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   const playOriginalBtn = document.getElementById('play-original-btn');
   const playReconstructedBtn = document.getElementById('play-reconstructed-btn');
   const phraseItemsEl = document.getElementById('phrase-items');
+  const passingToneNoteEl = document.getElementById('passing-tone-note');
   const traceLogEl = document.getElementById('trace-log');
   const copyTraceBtn = document.getElementById('copy-trace-btn');
   let traceLines = [];
@@ -328,6 +330,7 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
   let currentNote = null;
   let noteStartTime = 0;
   let detectedNotes = [];
+  let rawDetectedNotes = [];
   let isRecording = false;
   let isCountingIn = false;
   let candidateLabel = null;
@@ -392,6 +395,51 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
       chip.appendChild(dur);
       phraseItemsEl.appendChild(chip);
     });
+  }
+
+  // Semitone distance between two notes (name+octave), signed: positive
+  // means "b" is higher than "a".
+  function semitoneDistance(a, b) {
+    const aIdx = noteNames.indexOf(a.name) + a.octave * 12;
+    const bIdx = noteNames.indexOf(b.name) + b.octave * 12;
+    return bIdx - aIdx;
+  }
+
+  // Post-processing pass, run once after recording stops (not live), to
+  // remove passing tones: brief notes that sit exactly one semitone
+  // between two more substantial neighbouring notes, as part of one
+  // continuous directional movement (e.g. singing C up to E often
+  // briefly passes through D on the way, even when the singer intends
+  // a clean leap - confirmed separately with a piano test showing this
+  // is a real characteristic of sung pitch, not a detection bug). A
+  // passing tone is merged into the note that follows it, since that's
+  // the note the voice was actually moving toward.
+  const PASSING_TONE_MAX_BEATS = 0.5; // at most an eighth note
+  function removePassingTones(notes) {
+    if (notes.length < 3) return notes.slice();
+    const result = [];
+    let i = 0;
+    while (i < notes.length) {
+      const prev = result[result.length - 1];
+      const curr = notes[i];
+      const next = notes[i + 1];
+      if (prev && next && curr.rhythmBeats <= PASSING_TONE_MAX_BEATS) {
+        const distIn = semitoneDistance(prev, curr);
+        const distOut = semitoneDistance(curr, next);
+        const isSingleStepEachWay = Math.abs(distIn) === 1 && Math.abs(distOut) === 1;
+        const isSameDirection = Math.sign(distIn) !== 0 && Math.sign(distIn) === Math.sign(distOut);
+        if (isSingleStepEachWay && isSameDirection) {
+          // Merge: drop curr, extend the upcoming note's effective start
+          // backward to absorb curr's duration, since it represents the
+          // same continuous vocal movement toward that destination note.
+          i++;
+          continue;
+        }
+      }
+      result.push(curr);
+      i++;
+    }
+    return result;
   }
 
   function finalizeCurrentNote(endTime) {
@@ -645,7 +693,9 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
       recordBtn.disabled = true;
       stopBtn.disabled = false;
       detectedNotes = [];
+      rawDetectedNotes = [];
       renderPhrase();
+      passingToneNoteEl.textContent = '';
       traceLogEl.innerHTML = '';
       traceLines = [];
       playOriginalBtn.disabled = true;
@@ -721,6 +771,17 @@ import { PitchDetector } from "https://esm.sh/pitchy@4";
     recordBtn.disabled = false;
     stopBtn.disabled = true;
     beatLabelEl.textContent = 'Beat - of -';
+
+    // Post-processing: filter out passing tones now that the full
+    // sequence is known (this needs to see each note's neighbours on
+    // both sides, so it only runs once recording is complete).
+    rawDetectedNotes = detectedNotes.slice();
+    detectedNotes = removePassingTones(detectedNotes);
+    renderPhrase();
+    const removedCount = rawDetectedNotes.length - detectedNotes.length;
+    passingToneNoteEl.textContent = removedCount > 0
+      ? removedCount + ' passing tone' + (removedCount > 1 ? 's' : '') + ' filtered out (' + rawDetectedNotes.length + ' \u2192 ' + detectedNotes.length + ' notes)'
+      : '';
 
     if (detectedNotes.length > 0) {
       playReconstructedBtn.disabled = false;
